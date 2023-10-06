@@ -11,15 +11,35 @@ from config import USER, PASSWORD, HOST, DATABASE
 engine = create_engine(f'mysql://{USER}:{PASSWORD}@{HOST}/{DATABASE}') 
 
 df_table = pd.read_sql("""
-SELECT product_code as Product, MONTHNAME(order_date) as Month, SUM(sales_qty * sales_amount) as Sales
+SELECT product_code as Product, EXTRACT(YEAR_MONTH FROM order_date) AS Month, SUM(sales_qty * sales_amount) as Sales
 FROM transactions
-WHERE YEAR(order_date) = "2020"
+WHERE order_date >= '2019-12-01'
 GROUP BY Product, Month
-ORDER BY Product
+ORDER BY Product, Month
 """, engine)
 
+df_table['Growth'] = df_table.groupby('Product')['Sales'].pct_change() * 100
+
+#handle the case where there is no previous month's data
+df_table['Growth'].fillna(0, inplace=True)
+
+# change type
+df_table['Month'] = df_table['Month'].astype(str)
+
+# drop 201912
+df_table = df_table[df_table['Month'] != '201912']
+
+# Reset the index after filtering
+df_table.reset_index(drop=True, inplace=True)
+
+# Convert the 'Month' column to a datetime object
+df_table['Month'] = pd.to_datetime(df_table['Month'], format='%Y%m')
+
+# Format the 'Month' column as 'Month Year'
+df_table['Month'] = df_table['Month'].dt.strftime('%B %Y')
+
 df_chart = pd.read_sql("""
-SELECT product_code as Product, MONTHNAME(order_date) as Month, SUM(sales_qty * sales_amount) as Sales
+SELECT product_code as Product, MONTH(order_date) as Month, SUM(sales_qty * sales_amount) as Sales
 FROM transactions
 WHERE YEAR(order_date) = "2020"
 GROUP BY Product, Month
@@ -60,6 +80,7 @@ columnDefs = [
     {"field": "Product"},
     {"field": "Month"},
     {"field": "Sales"},
+    {"field": "Growth"},
 ]
 
 app.layout = html.Div(
